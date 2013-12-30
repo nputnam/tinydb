@@ -114,10 +114,7 @@ public class RegionFileTest {
             previous = next;
             count++;
         }
-
-       log.info("Finished iteration of "+count+" records in "+(System.currentTimeMillis() - start));
-
-
+        log.info("Finished iteration of "+count+" records in "+(System.currentTimeMillis() - start));
         RegionManager.INSTANCE.destroyAllRegions();
     }
 

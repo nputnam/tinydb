@@ -10,6 +10,8 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentNavigableMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 
 
 /**
@@ -28,7 +30,7 @@ public class RegionFile {
     private final long createdAt = System.currentTimeMillis();
     private byte[] startKey = null;
     private byte[] endKey = null;
-    private final Map<byte[], Entity> memstore = new TreeMap<byte[], Entity>(SignedBytes.lexicographicalComparator());
+    private final ConcurrentNavigableMap<byte[], Entity> memstore = new ConcurrentSkipListMap<byte[], Entity>(SignedBytes.lexicographicalComparator());
 
     public RegionFile(File regionFile) {
         this.regionFile = regionFile;
@@ -52,7 +54,7 @@ public class RegionFile {
         return memstore;
     }
 
-    public void a dd(Entity entity) {
+    public void add(Entity entity) {
         this.memstore.put(entity.getKey(), entity);
         updateRange(entity);
     }
@@ -73,7 +75,7 @@ public class RegionFile {
     }
 
     public Iterator<Entity> getValues() {
-        ImmutableList<Iterator<Entity>> of = ImmutableList.<Iterator<Entity>>of(memstore.values().iterator(), getDiskValues());
+        ImmutableList<Iterator<Entity>> of = ImmutableList.of(memstore.values().iterator(), getDiskValues());
         return Iterators.mergeSorted(of, new EnityComparator());
     }
 
@@ -89,7 +91,7 @@ public class RegionFile {
         return endKey;
     }
 
-    public void updateRange(Entity entity) {
+    private void updateRange(Entity entity) {
         if (entity == null) return;
         if (startKey == null) {
             startKey = entity.getKey();
