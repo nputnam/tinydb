@@ -92,7 +92,7 @@ public class RegionFileTest {
 
         long start = System.currentTimeMillis();
         byte[] key = null;
-        for (int i=0; i<100000; i++) {
+        for (int i=0; i<1000; i++) {
             key = UUID.randomUUID().toString().getBytes();
             region.add(new Entity(key, UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
         }
@@ -116,6 +116,54 @@ public class RegionFileTest {
         }
         log.info("Finished iteration of "+count+" records in "+(System.currentTimeMillis() - start));
         RegionManager.INSTANCE.destroyAllRegions();
+    }
+
+    @Test
+    public void testNewestElement() throws Exception {
+        RegionFile region = RegionManager.INSTANCE.createRegion();
+        byte[] key = UUID.randomUUID().toString().getBytes();
+        region.add(new Entity(key, "test1".getBytes(), 0l, false));
+        region = RegionManager.INSTANCE.flushRegion(region);
+        region.add(new Entity(key, "test2".getBytes(), 1l, false));
+
+        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
+        Optional<Entity> entityOptional = lookedupRegion.get(key);
+        Assert.assertTrue(entityOptional.isPresent());
+        Assert.assertEquals("test2", new String(entityOptional.get().getValue()));
+    }
+
+    @Test
+    public void testNewestElementAfter() throws Exception {
+        RegionFile region = RegionManager.INSTANCE.createRegion();
+        byte[] key = UUID.randomUUID().toString().getBytes();
+        region.add(new Entity(key, "test1".getBytes(), 2l, false));
+        region = RegionManager.INSTANCE.flushRegion(region);
+        region.add(new Entity(key, "test2".getBytes(), 1l, false));
+
+        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
+        Optional<Entity> entityOptional = lookedupRegion.get(key);
+        Assert.assertTrue(entityOptional.isPresent());
+        Assert.assertEquals("test1", new String(entityOptional.get().getValue()));
+    }
+
+    @Test
+    public void testMultipleSameKeyReturnsOneElement() throws Exception {
+        RegionFile region = RegionManager.INSTANCE.createRegion();
+        byte[] key = UUID.randomUUID().toString().getBytes();
+        region.add(new Entity(key, "test1".getBytes(), 1l, false));
+        region = RegionManager.INSTANCE.flushRegion(region);
+        region.add(new Entity(key, "test2".getBytes(), 2l, false));
+
+        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
+
+        Iterator<Entity> values = lookedupRegion.getValues();
+        int counter = 0;
+        while (values.hasNext()) {
+            Entity next = values.next();
+            Assert.assertEquals("test2", new String(next.getValue()));
+            counter++;
+        }
+        Assert.assertEquals(1, counter);
     }
 
 }

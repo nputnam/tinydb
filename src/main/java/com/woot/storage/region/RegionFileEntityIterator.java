@@ -20,11 +20,11 @@ import java.nio.channels.FileChannel;
     bytes <key bytes>
     byte <value length>
  */
-public class RegionFileIterator extends AbstractIterator<Entity> {
+public class RegionFileEntityIterator extends AbstractIterator<Entity> {
 
     private final FileChannel inChannel;
 
-    public RegionFileIterator(File file) {
+    public RegionFileEntityIterator(File file) {
         try {
             RandomAccessFile aFile = new RandomAccessFile(file, "r");
             inChannel = aFile.getChannel();
@@ -59,9 +59,6 @@ public class RegionFileIterator extends AbstractIterator<Entity> {
 
             Entity entity = new Entity(keyBuffer.array(), valueBuffer.array(), timestamp, deleted == Byte.MAX_VALUE ? Boolean.TRUE : Boolean.FALSE);
 
-            if (entity.isDeleted()) {
-                return null;
-            }
             return entity;
 
         } catch (IOException e) {

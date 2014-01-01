@@ -44,7 +44,8 @@ public class RegionFile {
         }
 
         if (startKey != null && endKey != null) {
-            log.info(String.format("Region opened (%d). Start key is %s and end key is %s", numRecords, new String(startKey), new String(endKey)));
+            log.info(String.format("Region %s opened (%d). Start key is %s and end key is %s", regionFile.getAbsolutePath()
+                    ,numRecords, new String(startKey), new String(endKey)));
         } else {
             log.info(String.format("Region %s opened (%d)", regionFile.getAbsolutePath(), numRecords));
         }
@@ -55,8 +56,24 @@ public class RegionFile {
     }
 
     public void add(Entity entity) {
+        // Easy approach to this.
+        Iterator<Entity> values = getValues();
+        while (values.hasNext()) {
+            Entity currentEntity = values.next();
+            if (Arrays.equals(currentEntity.getKey(), entity.getKey())) {
+                if (entity.getTimestamp() > currentEntity.getTimestamp()) {
+                    addToMemstore(entity);
+                }
+                return;
+            }
+        }
+
+        this.addToMemstore(entity);
+    }
+
+    private void addToMemstore(Entity entity) {
         this.memstore.put(entity.getKey(), entity);
-        updateRange(entity);
+        this.updateRange(entity);
     }
 
     public Optional<Entity> get(byte[] key) {
@@ -76,11 +93,11 @@ public class RegionFile {
 
     public Iterator<Entity> getValues() {
         ImmutableList<Iterator<Entity>> of = ImmutableList.of(memstore.values().iterator(), getDiskValues());
-        return Iterators.mergeSorted(of, new EnityComparator());
+        return new LogicalEntityIterator(Iterators.mergeSorted(of, new EnityComparator()));
     }
 
     private Iterator<Entity> getDiskValues() {
-        return new RegionFileIterator(regionFile);
+        return new RegionFileEntityIterator(regionFile);
     }
 
     public byte[] getStartKey() {
