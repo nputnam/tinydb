@@ -31,9 +31,11 @@ public class RegionFile {
     private byte[] startKey = null;
     private byte[] endKey = null;
     private final ConcurrentNavigableMap<byte[], Entity> memstore = new ConcurrentSkipListMap<byte[], Entity>(SignedBytes.lexicographicalComparator());
+    private final RegionManager regionManager;
 
-    public RegionFile(File regionFile) {
+    public RegionFile(File regionFile, RegionManager regionManager) {
         this.regionFile = regionFile;
+        this.regionManager = regionManager;
         int numRecords = 0;
         // Open the region file and fill out the stuffs we need.
         Iterator<Entity> diskValues = getDiskValues();
@@ -42,7 +44,6 @@ public class RegionFile {
             updateRange(next);
             numRecords++;
         }
-
         if (startKey != null && endKey != null) {
             log.info(String.format("Region %s opened (%d). Start key is %s and end key is %s", regionFile.getAbsolutePath()
                     ,numRecords, new String(startKey), new String(endKey)));
@@ -67,13 +68,15 @@ public class RegionFile {
                 return;
             }
         }
-
         this.addToMemstore(entity);
     }
 
     private void addToMemstore(Entity entity) {
         this.memstore.put(entity.getKey(), entity);
         this.updateRange(entity);
+        if (memstore.size() > 500) {
+            regionManager.flushRegion(this);
+        }
     }
 
     public Optional<Entity> get(byte[] key) {

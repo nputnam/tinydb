@@ -9,8 +9,10 @@ import com.woot.storage.region.RegionFile;
 import junit.framework.Assert;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.io.File;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
@@ -19,92 +21,88 @@ public class RegionFileTest {
 
     private static final Logger log = LogManager.getLogger(RegionFileTest.class);
 
+    private static RegionManager regionManager = new RegionManager(System.getProperty("java.io.tmpdir") + File.separator + UUID.randomUUID());
+
+    @BeforeClass
+    public static void startMananger() throws Exception {
+        regionManager.startAsync().awaitRunning();
+    }
+
     @Test
     public void testSimplePut() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
         byte[] key = UUID.randomUUID().toString().getBytes();
         try {
-            region.add(new Entity(key, "value".getBytes(), System.currentTimeMillis(), false));
-            Iterator<Entity> values = RegionManager.INSTANCE.getRegion(key).getValues();
+            regionManager.put(new Entity(key, "value".getBytes(), System.currentTimeMillis(), false));
+            Iterator<Entity> values = regionManager.getRegion(key).get().getValues();
             while (values.hasNext()) {
                 Entity next = values.next();
                 Assert.assertEquals(new String(key), new String(next.getKey()));
             }
         } finally {
-            RegionManager.INSTANCE.destroyAllRegions();
+            regionManager.destroyAllRegions();
         }
     }
 
     @Test
     public void testSimpleMultiValueFlush() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
 
         byte[] key1 = UUID.randomUUID().toString().getBytes();
         byte[] key2 = UUID.randomUUID().toString().getBytes();
         List<byte[]> keys = ImmutableList.of(key1, key2);
         try {
             for (byte[] key : keys) {
-                region.add(new Entity(key, UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
+                regionManager.put(new Entity(key, UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
             }
-            RegionManager.INSTANCE.flushRegion(region);
+            regionManager.flushRegion(regionManager.getRegion(key1).get());
             for (byte[] key : keys) {
-                RegionFile foundRegion = RegionManager.INSTANCE.getRegion(key);
+                RegionFile foundRegion = regionManager.getRegion(key).get();
                 Optional<Entity> entityOptional = foundRegion.get(key);
                 Assert.assertTrue(entityOptional.isPresent());
             }
-
         } finally {
-            RegionManager.INSTANCE.destroyAllRegions();
+            regionManager.destroyAllRegions();
         }
     }
 
     @Test
     public void testFlushOrder() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
 
-        region.add(new Entity("d".getBytes(), UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
-        region.add(new Entity("a".getBytes(), UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
+        regionManager.put(new Entity("d".getBytes(), UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
+        regionManager.put(new Entity("a".getBytes(), UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
+        regionManager.put(new Entity("b".getBytes(), UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
+        regionManager.put(new Entity("c".getBytes(), UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
 
-        RegionManager.INSTANCE.flushRegion(region);
+        Optional<RegionFile> region = regionManager.getRegion("c".getBytes());
 
-        region = RegionManager.INSTANCE.getRegion("c".getBytes());
-
-        region.add(new Entity("b".getBytes(), UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
-        region.add(new Entity("c".getBytes(), UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
-
-        Iterator<Entity> values = region.getValues();
+        Iterator<Entity> values = region.get().getValues();
         Entity previous = null;
         while (values.hasNext()) {
             Entity next = values.next();
             if (previous != null) {
-             Assert.assertTrue(SignedBytes.lexicographicalComparator().compare(previous.getKey(), next.getKey()) < 0);
+                Assert.assertTrue(SignedBytes.lexicographicalComparator().compare(previous.getKey(), next.getKey()) < 0);
             }
             log.info(new String(next.getKey()));
             previous = next;
         }
 
-        RegionManager.INSTANCE.destroyAllRegions();
+        regionManager.destroyAllRegions();
     }
 
     @Test
     public void testBunchOPut() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
 
         long start = System.currentTimeMillis();
         byte[] key = null;
-        for (int i=0; i<1000; i++) {
+        for (int i = 0; i < 1000; i++) {
             key = UUID.randomUUID().toString().getBytes();
-            region.add(new Entity(key, UUID.randomUUID().toString().getBytes(),System.currentTimeMillis(), false));
+            regionManager.put(new Entity(key, UUID.randomUUID().toString().getBytes(), System.currentTimeMillis(), false));
         }
         log.info("Finished insert in " + (System.currentTimeMillis() - start));
-        start = System.currentTimeMillis();
-        region = RegionManager.INSTANCE.flushRegion(region);
-        log.info("Finished flush in " + (System.currentTimeMillis() - start));
 
 
         start = System.currentTimeMillis();
-        Iterator<Entity> values = region.getValues();
-        int count =0;
+        Iterator<Entity> values = regionManager.getRegion(key).get().getValues();
+        int count = 0;
         Entity previous = null;
         while (values.hasNext()) {
             Entity next = values.next();
@@ -114,47 +112,46 @@ public class RegionFileTest {
             previous = next;
             count++;
         }
-        log.info("Finished iteration of "+count+" records in "+(System.currentTimeMillis() - start));
-        RegionManager.INSTANCE.destroyAllRegions();
+        log.info("Finished iteration of " + count + " records in " + (System.currentTimeMillis() - start));
+        regionManager.destroyAllRegions();
     }
 
     @Test
     public void testNewestElement() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
-        byte[] key = UUID.randomUUID().toString().getBytes();
-        region.add(new Entity(key, "test1".getBytes(), 0l, false));
-        region = RegionManager.INSTANCE.flushRegion(region);
-        region.add(new Entity(key, "test2".getBytes(), 1l, false));
 
-        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
-        Optional<Entity> entityOptional = lookedupRegion.get(key);
+        byte[] key = UUID.randomUUID().toString().getBytes();
+        regionManager.put(new Entity(key, "test1".getBytes(), 0l, false));
+        regionManager.put(new Entity(key, "test2".getBytes(), 1l, false));
+
+        RegionFile lookedUpRegion = regionManager.getRegion(key).get();
+        Optional<Entity> entityOptional = lookedUpRegion.get(key);
         Assert.assertTrue(entityOptional.isPresent());
         Assert.assertEquals("test2", new String(entityOptional.get().getValue()));
+
+        regionManager.destroyAllRegions();
     }
 
     @Test
     public void testNewestElementAfter() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
         byte[] key = UUID.randomUUID().toString().getBytes();
-        region.add(new Entity(key, "test1".getBytes(), 2l, false));
-        region = RegionManager.INSTANCE.flushRegion(region);
-        region.add(new Entity(key, "test2".getBytes(), 1l, false));
+        regionManager.put(new Entity(key, "test1".getBytes(), 2l, false));
+       regionManager.put(new Entity(key, "test2".getBytes(), 1l, false));
 
-        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
+        RegionFile lookedupRegion = regionManager.getRegion(key).get();
         Optional<Entity> entityOptional = lookedupRegion.get(key);
         Assert.assertTrue(entityOptional.isPresent());
         Assert.assertEquals("test1", new String(entityOptional.get().getValue()));
+
+        regionManager.destroyAllRegions();
     }
 
     @Test
     public void testMultipleSameKeyReturnsOneElement() throws Exception {
-        RegionFile region = RegionManager.INSTANCE.createRegion();
         byte[] key = UUID.randomUUID().toString().getBytes();
-        region.add(new Entity(key, "test1".getBytes(), 1l, false));
-        region = RegionManager.INSTANCE.flushRegion(region);
-        region.add(new Entity(key, "test2".getBytes(), 2l, false));
+        regionManager.put(new Entity(key, "test1".getBytes(), 1l, false));
+        regionManager.put(new Entity(key, "test2".getBytes(), 2l, false));
 
-        RegionFile lookedupRegion = RegionManager.INSTANCE.getRegion(key);
+        RegionFile lookedupRegion = regionManager.getRegion(key).get();
 
         Iterator<Entity> values = lookedupRegion.getValues();
         int counter = 0;
@@ -164,6 +161,8 @@ public class RegionFileTest {
             counter++;
         }
         Assert.assertEquals(1, counter);
+
+        regionManager.destroyAllRegions();
     }
 
 }
